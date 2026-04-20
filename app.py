@@ -1,49 +1,31 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
-import datetime
+import os
 
 app = FastAPI()
 
-# CORS (frontend connect)
-app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"],)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# DB
-conn = sqlite3.connect("db.db", check_same_thread=False)
-cur = conn.cursor()
+UPLOAD_DIR = "data"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-cur.execute("CREATE TABLE IF NOT EXISTS designs (id INTEGER PRIMARY KEY AUTOINCREMENT, image TEXT)")
-cur.execute("CREATE TABLE IF NOT EXISTS items (tag INTEGER, design_id INTEGER, stock INTEGER, price REAL)")
-cur.execute("CREATE TABLE IF NOT EXISTS sales (tag INTEGER, qty INTEGER, date TEXT)")
-conn.commit()
+@app.get("/")
+def home():
+    return {"status": "AI Search Running"}
 
-# 🔥 Add Design
-@app.post("/add_design")
-async def add_design(file: UploadFile):
-    path = f"dataset/{file.filename}"
+@app.post("/upload")
+async def upload(file: UploadFile = File(...)):
+    path = os.path.join(UPLOAD_DIR, file.filename)
     with open(path, "wb") as f:
         f.write(await file.read())
-    cur.execute("INSERT INTO designs (image) VALUES (?)", (path,))
-    conn.commit()
-    return {"status": "design added"}
+    return {"msg": "uploaded"}
 
-# 🔥 Add Item
-@app.post("/add_item")
-def add_item(tag: int, design_id: int, stock: int, price: float):
-    cur.execute("INSERT INTO items VALUES (?, ?, ?, ?)", (tag, design_id, stock, price))
-    conn.commit()
-    return {"status": "item added"}
-
-# 🔥 Sell
-@app.post("/sell")
-def sell(tag: int, qty: int):
-    cur.execute("UPDATE items SET stock = stock - ? WHERE tag=?", (qty, tag))
-    cur.execute("INSERT INTO sales VALUES (?, ?, ?)", (tag, qty, str(datetime.datetime.now())))
-    conn.commit()
-    return {"status": "sold"}
-
-# 🔍 Search
-@app.get("/search/{design_id}")
-def search(design_id: int):
-    cur.execute("SELECT * FROM items WHERE design_id=?", (design_id,))
-    return {"items": cur.fetchall()}
+@app.get("/search")
+def search():
+    return {"result": "Coming soon AI search"}
