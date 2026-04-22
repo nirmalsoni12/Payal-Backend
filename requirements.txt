@@ -5,5 +5,6 @@ pydantic==2.6.4
 opencv-python
 numpy
 transformers
+requests
 torch
 Pillow
