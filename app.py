@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import os
+import httpx
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
@@ -27,9 +28,8 @@ def home():
 async def search(file: UploadFile = File(...)):
     contents = await file.read()
 
-    response = requests.post(API_URL, headers=headers, data=contents)
-    result = response.json()
+    async with httpx.AsyncClient() as client:
+        response = await client.post(API_URL, headers=headers, content=contents)
 
-    return {
-        "result": result
-    }
+    result = response.json()
+    return {"result": result}
