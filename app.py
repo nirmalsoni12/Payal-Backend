@@ -6,11 +6,9 @@ import os
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 API_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,14 +25,20 @@ def home():
 async def search(file: UploadFile = File(...)):
     contents = await file.read()
 
-    response = requests.post(API_URL, headers=headers, data=contents)
+    response = requests.post(
+        API_URL,
+        headers={
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/octet-stream"
+        },
+        data=contents
+    )
 
     try:
         result = response.json()
     except:
-        return {"error": response.text}   # 🔥 SAFE
+        return {"error": response.text}
 
-    # 🔥 HANDLE HF ERROR
     if isinstance(result, dict) and "error" in result:
         return {"error": result["error"]}
 
