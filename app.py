@@ -7,6 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 app = FastAPI()
 
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,10 +20,7 @@ DB_FILE = "items.json"
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# -------------------
-# UTILS
-# -------------------
-
+# ---------------- DB ----------------
 def load_items():
     if not os.path.exists(DB_FILE):
         return []
@@ -33,38 +31,48 @@ def save_items(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-# 🔥 SIMPLE IMAGE VECTOR (lightweight AI)
+# ---------------- AUTO TAG ----------------
+def generate_tag(items):
+    if not items:
+        return "TAG0001"
+    last = items[-1]["tag_no"]
+    num = int(last.replace("TAG", ""))
+    return f"TAG{num+1:04d}"
+
+# ---------------- IMAGE VECTOR ----------------
 def image_to_vector(path):
     img = Image.open(path).resize((64, 64))
     arr = np.array(img).flatten()
     return arr / 255.0
 
-# -------------------
-# ADD ITEM
-# -------------------
+# ---------------- HOME ----------------
+@app.get("/")
+def home():
+    return {"status": "System Running 🚀"}
 
+# ---------------- ADD ITEM ----------------
 @app.post("/add-item")
 async def add_item(
     file: UploadFile = File(...),
-    tag_no: str = Form(...),
     name: str = Form(...),
     quantity: int = Form(...)
 ):
     items = load_items()
 
+    tag_no = generate_tag(items)
     sys_id = str(uuid.uuid4())[:8]
-    file_path = f"{UPLOAD_DIR}/{sys_id}.jpg"
 
-    with open(file_path, "wb") as buffer:
+    path = f"{UPLOAD_DIR}/{sys_id}.jpg"
+    with open(path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    vector = image_to_vector(file_path).tolist()
+    vector = image_to_vector(path).tolist()
 
     new_item = {
         "id": sys_id,
         "tag_no": tag_no,
         "name": name,
-        "image": file_path,
+        "image": path,
         "quantity": quantity,
         "vector": vector
     }
@@ -72,12 +80,9 @@ async def add_item(
     items.append(new_item)
     save_items(items)
 
-    return {"msg": "Item added"}
+    return {"msg": "Item added", "tag": tag_no}
 
-# -------------------
-# SEARCH (REAL MATCH)
-# -------------------
-
+# ---------------- SEARCH ----------------
 @app.post("/search")
 async def search(file: UploadFile = File(...)):
     items = load_items()
@@ -85,11 +90,11 @@ async def search(file: UploadFile = File(...)):
     if not items:
         return {"error": "No data"}
 
-    temp_path = "temp.jpg"
-    with open(temp_path, "wb") as f:
+    temp = "temp.jpg"
+    with open(temp, "wb") as f:
         f.write(await file.read())
 
-    query_vec = image_to_vector(temp_path).reshape(1, -1)
+    query_vec = image_to_vector(temp).reshape(1, -1)
 
     best = None
     best_score = -1
@@ -106,3 +111,24 @@ async def search(file: UploadFile = File(...)):
         "match": best,
         "similarity": round(float(best_score), 2)
     }
+
+# ---------------- SELL ITEM ----------------
+@app.post("/sell-item")
+def sell_item(tag_no: str = Form(...)):
+    items = load_items()
+
+    for item in items:
+        if item["tag_no"] == tag_no:
+
+            if item["quantity"] <= 0:
+                return {"error": "Out of stock"}
+
+            item["quantity"] -= 1
+            save_items(items)
+
+            return {
+                "msg": "Sold",
+                "remaining": item["quantity"]
+            }
+
+    return {"error": "Item not found"}
