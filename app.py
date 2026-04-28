@@ -15,86 +15,81 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_FILE = "items.json"
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+DB="items.json"
+USERS="users.json"
+UPLOAD="uploads"
+os.makedirs(UPLOAD,exist_ok=True)
 
 # ---------------- DB ----------------
-def load_items():
-    if not os.path.exists(DB_FILE):
-        return []
-    with open(DB_FILE) as f:
-        return json.load(f)
+def load_db():
+    return json.load(open(DB)) if os.path.exists(DB) else []
 
-def save_items(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def save_db(data):
+    json.dump(data,open(DB,"w"),indent=2)
 
-# ---------------- IMAGE VECTOR ----------------
-def image_to_vector(path):
+def load_users():
+    return json.load(open(USERS))
+
+# ---------------- LOGIN ----------------
+@app.post("/login")
+def login(username: str = Form(...), password: str = Form(...)):
+    users = load_users()
+    for u in users:
+        if u["username"] == username and u["password"] == password:
+            return {"success": True}
+    return {"success": False}
+
+# ---------------- VECTOR ----------------
+def img_vec(path):
     img = Image.open(path).resize((64,64))
     arr = np.array(img).flatten()
-    return arr / 255.0
+    return arr/255.0
 
 # ---------------- DUPLICATE ----------------
-def is_duplicate(new_vec, items, threshold=0.95):
+def find_duplicate(vec, items):
     for item in items:
-        vec = np.array(item["vector"]).reshape(1,-1)
-        score = cosine_similarity(new_vec.reshape(1,-1), vec)[0][0]
-        if score > threshold:
-            return item, score
-    return None, None
+        v = np.array(item["vector"]).reshape(1,-1)
+        score = cosine_similarity(vec.reshape(1,-1),v)[0][0]
+        if score > 0.95:
+            return item
+    return None
 
-# ---------------- DESIGN ID ----------------
-def generate_design_id(items):
-    if not items:
-        return "DESIGN001"
-    last = items[-1]["design_id"]
-    num = int(last.replace("DESIGN",""))
-    return f"DESIGN{num+1:03d}"
-
-# ---------------- BULK ADD WITH BARCODE DATA ----------------
-@app.post("/add-bulk")
-async def add_bulk(
+# ---------------- ADD ITEM ----------------
+@app.post("/add-item")
+async def add_item(
     file: UploadFile = File(...),
     name: str = Form(...),
-    quantity: int = Form(...),
     barcodes: str = Form(...),
-    weights: str = Form(...)  # 🔥 JSON string
+    weights: str = Form(...)
 ):
-    items = load_items()
+    items = load_db()
 
-    temp = "temp.jpg"
+    temp="temp.jpg"
     with open(temp,"wb") as f:
         f.write(await file.read())
 
-    vec = image_to_vector(temp)
-    existing, _ = is_duplicate(vec, items)
+    vec = img_vec(temp)
+    existing = find_duplicate(vec, items)
 
     barcode_list = barcodes.split(",")
     weight_data = json.loads(weights)
 
-    # EXISTING
+    # EXISTING DESIGN
     if existing:
         existing["quantity"] += len(barcode_list)
         existing["tag_series"].extend(barcode_list)
+        existing["barcode_data"].update(weight_data)
 
-        # add weight info
-        existing.setdefault("barcode_data", {}).update(weight_data)
+        save_db(items)
+        return {"msg":"Added to existing","id":existing["id"]}
 
-        save_items(items)
-
-        return {"msg":"Added to existing","design":existing["design_id"]}
-
-    # NEW
-    design_id = generate_design_id(items)
+    # NEW DESIGN
     sys_id = str(uuid.uuid4())[:8]
-    path = f"{UPLOAD_DIR}/{sys_id}.jpg"
-    shutil.copy(temp, path)
+    path=f"{UPLOAD}/{sys_id}.jpg"
+    shutil.copy(temp,path)
 
     new_item = {
         "id": sys_id,
-        "design_id": design_id,
         "name": name,
         "image": path,
         "quantity": len(barcode_list),
@@ -104,18 +99,47 @@ async def add_bulk(
     }
 
     items.append(new_item)
-    save_items(items)
+    save_db(items)
 
-    return {"msg":"New design added","design":design_id}
+    return {"msg":"New item added","id":sys_id}
 
-# ---------------- BARCODE LOOKUP ----------------
-@app.get("/get-barcode-info")
-def get_barcode_info(code: str):
-    items = load_items()
+# ---------------- SEARCH ----------------
+@app.post("/search")
+async def search(file: UploadFile = File(...)):
+    items = load_db()
+
+    temp="temp.jpg"
+    with open(temp,"wb") as f:
+        f.write(await file.read())
+
+    vec = img_vec(temp).reshape(1,-1)
+
+    best=None
+    best_score=0
 
     for item in items:
-        if code in item.get("tag_series", []):
-            info = item.get("barcode_data", {}).get(code, {})
-            return {"found":True,"data":info}
+        v = np.array(item["vector"]).reshape(1,-1)
+        score = cosine_similarity(vec,v)[0][0]
 
-    return {"found":False}
+        if score > best_score:
+            best_score=score
+            best=item
+
+    if best_score > 0.95:
+        return {"type":"same","item":best}
+
+    return {"type":"similar","item":best}
+
+# ---------------- SALE REPORT ----------------
+@app.post("/sale")
+def sale(tag: str = Form(...)):
+    items = load_db()
+
+    for item in items:
+        if tag in item["tag_series"]:
+            item["tag_series"].remove(tag)
+            item["quantity"] -= 1
+            save_db(items)
+            return {"msg":"Sold","remaining":item["quantity"]}
+
+    return {"error":"Not found"}
