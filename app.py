@@ -35,9 +35,8 @@ def load_users():
 def login(username: str = Form(...), password: str = Form(...)):
     for u in load_users():
         if u["username"] == username and u["password"] == password:
-            return {"success": True}
-    return {"success": False}
-
+            return {"success": True, "msg": "Login success"}
+    return {"success": False, "msg": "Invalid username or password"}
 # ---------------- IMAGE VECTOR ----------------
 def img_vec(path):
     img = Image.open(path).resize((64,64))
