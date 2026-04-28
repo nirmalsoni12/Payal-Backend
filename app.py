@@ -7,15 +7,12 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_FILE = "db.json"
-USERS_FILE = "users.json"
 
-# ---------- helpers ----------
 def load_db():
     try:
         return json.load(open(DB_FILE))
@@ -25,21 +22,14 @@ def load_db():
 def save_db(data):
     json.dump(data, open(DB_FILE, "w"))
 
-def load_users():
-    try:
-        return json.load(open(USERS_FILE))
-    except:
-        return [{"username":"admin","password":"1234@4321"}]
-
-# ---------- LOGIN ----------
+# LOGIN
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...)):
-    for u in load_users():
-        if u["username"] == username and u["password"] == password:
-            return {"success": True}
+    if username == "admin" and password == "payal@2026":
+        return {"success": True}
     return {"success": False}
 
-# ---------- ADD ITEM ----------
+# ADD ITEM
 @app.post("/add-item")
 async def add_item(
     file: UploadFile = File(...),
@@ -49,10 +39,8 @@ async def add_item(
 ):
     db = load_db()
 
-    item_id = str(uuid.uuid4())
-
-    new_item = {
-        "id": item_id,
+    item = {
+        "id": str(uuid.uuid4()),
         "name": name,
         "barcodes": barcodes.split(","),
         "weights": json.loads(weights),
@@ -60,21 +48,20 @@ async def add_item(
         "image": file.filename
     }
 
-    db.append(new_item)
+    db.append(item)
     save_db(db)
 
-    return {"id": item_id}
+    return {"id": item["id"]}
 
-# ---------- SEARCH ----------
+# SEARCH
 @app.post("/search")
 async def search(file: UploadFile = File(...)):
     db = load_db()
-
     if db:
-        return {"item": db[0], "type": "demo-match"}
-    return {"error": "no data"}
+        return {"item": db[0]}
+    return {"error": "No data"}
 
-# ---------- SALE ----------
+# SALE (manual tag)
 @app.post("/sale")
 def sale(tag: str = Form(...)):
     db = load_db()
