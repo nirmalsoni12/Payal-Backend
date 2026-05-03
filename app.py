@@ -31,6 +31,10 @@ def parse_data(text):
 
     return name, gw, nw
 
+@app.get("/")
+def home():
+    return {"message": "API is running 🚀"}
+
 @app.post("/scan")
 async def scan(file: UploadFile = File(...)):
     contents = await file.read()
